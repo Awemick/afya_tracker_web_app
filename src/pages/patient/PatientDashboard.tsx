@@ -44,6 +44,8 @@ import { useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { fetchUserSubscription } from '../../store/slices/subscriptionSlice';
 import { hybridPaymentService, PaymentMethod } from '../../services/hybridPaymentService';
+import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
+import { db } from '../../firebase';
 
 const PatientDashboard: React.FC = () => {
   const { user } = useSelector((state: RootState) => state.auth);
@@ -72,12 +74,70 @@ const PatientDashboard: React.FC = () => {
   const [messageData, setMessageData] = useState({
     content: '',
   });
+  const [loading, setLoading] = useState(true);
+  const [userProfile, setUserProfile] = useState<any>(null);
+  const [kickSessions, setKickSessions] = useState<any[]>([]);
+  const [appointments, setAppointments] = useState<any[]>([]);
+  const [medicalRecords, setMedicalRecords] = useState<any[]>([]);
 
   useEffect(() => {
     if (user) {
       dispatch(fetchUserSubscription() as any);
+      loadUserData();
     }
   }, [user, dispatch]);
+
+  const loadUserData = async () => {
+    if (!user?.id) return;
+
+    try {
+      setLoading(true);
+
+      // Load user profile
+      const userProfileQuery = query(
+        collection(db!, 'userProfiles'),
+        where('userId', '==', user.id)
+      );
+      const userProfileSnapshot = await getDocs(userProfileQuery);
+      if (!userProfileSnapshot.empty) {
+        setUserProfile(userProfileSnapshot.docs[0].data());
+      }
+
+      // Load kick sessions (recent 10)
+      const kickSessionsQuery = query(
+        collection(db!, 'kickSessions'),
+        where('patientId', '==', user.id),
+        orderBy('createdAt', 'desc'),
+        limit(10)
+      );
+      const kickSessionsSnapshot = await getDocs(kickSessionsQuery);
+      setKickSessions(kickSessionsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+      // Load appointments (upcoming)
+      const appointmentsQuery = query(
+        collection(db!, 'appointments'),
+        where('patientId', '==', user.id),
+        orderBy('scheduledTime', 'asc')
+      );
+      const appointmentsSnapshot = await getDocs(appointmentsQuery);
+      setAppointments(appointmentsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+      // Load medical records (recent)
+      const medicalRecordsQuery = query(
+        collection(db!, 'medicalRecords'),
+        where('patientId', '==', user.id),
+        orderBy('uploadedAt', 'desc'),
+        limit(5)
+      );
+      const medicalRecordsSnapshot = await getDocs(medicalRecordsQuery);
+      setMedicalRecords(medicalRecordsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+    } catch (error) {
+      console.error('Error loading user data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   interface Activity {
     time: string;
@@ -88,20 +148,20 @@ const PatientDashboard: React.FC = () => {
     timestamp: Date;
   }
 
-  // Mock data - replace with API calls
+  // Use real data from Firebase
   const patientData = {
-    name: 'Mary Wanjiku',
-    pregnancyWeek: 28,
-    dueDate: '2024-03-15',
+    name: userProfile?.name || 'Mama',
+    pregnancyWeek: userProfile?.pregnancyWeek || 0,
+    dueDate: userProfile?.dueDate || '',
   };
 
-  const recentSessions = [
-    { date: '2024-01-14', count: 8, duration: 12, position: 'sitting', intensity: 'medium' },
-    { date: '2024-01-13', count: 10, duration: 15, position: 'lying', intensity: 'low' },
-    { date: '2024-01-12', count: 7, duration: 10, position: 'standing', intensity: 'high' },
-  ];
-
-  const todayKicks = recentSessions.reduce((sum, session) => sum + session.count, 0);
+  // Calculate today's kicks from real data
+  const today = new Date().toDateString();
+  const todaySessions = kickSessions.filter(session => {
+    const sessionDate = new Date(session.createdAt?.toDate?.() || session.createdAt).toDateString();
+    return sessionDate === today;
+  });
+  const todayKicks = todaySessions.reduce((sum, session) => sum + (session.kickCount || 0), 0);
   const goals = [{ title: 'Daily Kick Count', current: todayKicks, target: 10, unit: 'kicks', isCompleted: todayKicks >= 10 }];
 
   const getGreeting = () => {
@@ -123,23 +183,52 @@ const PatientDashboard: React.FC = () => {
 
   const getRecentActivities = (): Activity[] => {
     const activities: Activity[] = [];
-    // Add kick sessions
-    recentSessions.slice(0, 3).forEach((session, index) => {
+
+    // Add kick sessions from Firebase
+    kickSessions.slice(0, 3).forEach((session) => {
+      const sessionDate = session.createdAt?.toDate?.() || new Date(session.createdAt);
       activities.push({
-        time: new Date(session.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        time: sessionDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         title: 'Kick session recorded',
-        subtitle: `${session.count} kicks in ${session.duration} minutes`,
+        subtitle: `${session.kickCount || 0} kicks in ${session.duration || 0} minutes`,
         icon: BabyChangingStation,
         color: '#FFB6C1',
-        timestamp: new Date(session.date),
+        timestamp: sessionDate,
       });
     });
+
+    // Add upcoming appointments
+    appointments.slice(0, 2).forEach((appointment) => {
+      const appointmentDate = new Date(appointment.scheduledTime);
+      activities.push({
+        time: appointmentDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        title: 'Upcoming appointment',
+        subtitle: `${appointment.type} appointment on ${appointmentDate.toLocaleDateString()}`,
+        icon: CalendarToday,
+        color: '#4A90E2',
+        timestamp: appointmentDate,
+      });
+    });
+
+    // Add medical records
+    medicalRecords.slice(0, 2).forEach((record) => {
+      const recordDate = record.uploadedAt?.toDate?.() || new Date(record.uploadedAt);
+      activities.push({
+        time: recordDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        title: 'Medical record uploaded',
+        subtitle: `${record.category}: ${record.fileName}`,
+        icon: MedicalServices,
+        color: '#7B68EE',
+        timestamp: recordDate,
+      });
+    });
+
     // Add goal progress
     goals.forEach(goal => {
       activities.push({
-        time: 'Recent',
+        time: 'Today',
         title: `${goal.title} progress`,
-        subtitle: `${goal.current.toFixed(1)} / ${goal.target} ${goal.unit}`,
+        subtitle: `${goal.current} / ${goal.target} ${goal.unit}`,
         icon: EmojiEvents,
         color: '#48BB78',
         timestamp: new Date(),
@@ -204,6 +293,19 @@ const PatientDashboard: React.FC = () => {
       console.error('Subscription failed:', error);
     }
   };
+
+  if (loading) {
+    return (
+      <Box sx={{ flex: 1, backgroundColor: '#f8f9fa', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
+        <Box textAlign="center">
+          <CircularProgress size={60} sx={{ mb: 2 }} />
+          <Typography variant="h6" color="text.secondary">
+            Loading your dashboard...
+          </Typography>
+        </Box>
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ flex: 1, backgroundColor: '#f8f9fa' }}>
@@ -340,7 +442,7 @@ const PatientDashboard: React.FC = () => {
               <PregnantWoman sx={{ color: 'primary.main', fontSize: 32 }} />
               <Box>
                 <Typography variant="h5" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
-                  {patientData.pregnancyWeek}
+                  {patientData.pregnancyWeek || 'N/A'}
                 </Typography>
                 <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                   Week
@@ -353,7 +455,7 @@ const PatientDashboard: React.FC = () => {
               <Timeline sx={{ color: 'secondary.main', fontSize: 32 }} />
               <Box>
                 <Typography variant="h5" sx={{ fontWeight: 'bold', color: 'secondary.main' }}>
-                  {recentSessions.length}
+                  {kickSessions.length}
                 </Typography>
                 <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                   Sessions
