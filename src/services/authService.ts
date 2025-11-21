@@ -1,14 +1,17 @@
-// Firebase Email Link Authentication Service
+// Firebase Authentication Service (Email/Password)
 import { User } from '../types';
 import { auth } from '../firebase';
 import {
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
   sendSignInLinkToEmail,
   isSignInWithEmailLink,
   signInWithEmailLink,
   signOut,
   onAuthStateChanged,
   ActionCodeSettings,
-  User as FirebaseUser
+  User as FirebaseUser,
+  updateProfile
 } from 'firebase/auth';
 
 export interface AuthUser extends User {
@@ -136,11 +139,30 @@ export const onAuthStateChange = (
   });
 };
 
-// Legacy functions for backward compatibility (redirect to email link flow)
-export const loginWithEmailAndPassword = async (email: string): Promise<AuthUser> => {
-  // For email link auth, we just send the link
-  await sendSignInLinkToEmailAddress(email);
-  throw new Error('Check your email for the sign-in link');
+// Email/Password Authentication Functions
+export const loginWithEmailAndPassword = async (email: string, password: string): Promise<AuthUser> => {
+  if (!auth) {
+    throw new Error('Firebase auth not initialized');
+  }
+
+  try {
+    const result = await signInWithEmailAndPassword(auth, email, password);
+    const firebaseUser = result.user;
+
+    // Create AuthUser object
+    const authUser: AuthUser = {
+      id: firebaseUser.uid,
+      name: firebaseUser.displayName || firebaseUser.email || '',
+      email: firebaseUser.email || '',
+      role: 'patient', // Default role, will be updated based on user data
+      firebaseUser
+    };
+
+    return authUser;
+  } catch (error) {
+    console.error('Error signing in with email/password:', error);
+    throw error;
+  }
 };
 
 export const signupWithEmailAndPassword = async (
@@ -148,7 +170,33 @@ export const signupWithEmailAndPassword = async (
   password: string,
   userData: Partial<User> & { role: 'patient' | 'provider' | 'admin' } & Record<string, any>
 ): Promise<AuthUser> => {
-  // For email link auth, we just send the link
-  await sendSignInLinkToEmailAddress(email);
-  throw new Error('Check your email for the sign-in link');
+  if (!auth) {
+    throw new Error('Firebase auth not initialized');
+  }
+
+  try {
+    const result = await createUserWithEmailAndPassword(auth, email, password);
+    const firebaseUser = result.user;
+
+    // Update the user's display name if provided
+    if (userData.name) {
+      await updateProfile(firebaseUser, {
+        displayName: userData.name
+      });
+    }
+
+    // Create AuthUser object
+    const authUser: AuthUser = {
+      id: firebaseUser.uid,
+      name: userData.name || firebaseUser.displayName || firebaseUser.email || '',
+      email: firebaseUser.email || '',
+      role: userData.role || 'patient',
+      firebaseUser
+    };
+
+    return authUser;
+  } catch (error) {
+    console.error('Error signing up with email/password:', error);
+    throw error;
+  }
 };

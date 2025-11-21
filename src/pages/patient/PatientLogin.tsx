@@ -13,32 +13,17 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
 import { setAuthUser, setLoading } from '../../store/slices/authSlice';
-import { sendSignInLinkToEmailAddress, onAuthStateChange, isSignInWithEmailLinkUrl, signInWithEmailLinkUrl } from '../../services/authService';
+import { loginWithEmailAndPassword, onAuthStateChange } from '../../services/authService';
 
 const PatientLogin: React.FC = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
   const [loading, setLoadingState] = useState(false);
 
   useEffect(() => {
-    // Check if this is an email link sign-in
-    if (isSignInWithEmailLinkUrl(window.location.href)) {
-      // Get email from localStorage
-      let email = window.localStorage.getItem('emailForSignIn');
-      if (!email) {
-        // If email is not found, prompt user
-        email = window.prompt('Please provide your email for confirmation');
-      }
-
-      if (email) {
-        // Complete the sign-in
-        completeSignIn(email);
-      }
-    }
-
     // Listen for authentication state changes
     const unsubscribe = onAuthStateChange((user) => {
       if (user) {
@@ -51,41 +36,18 @@ const PatientLogin: React.FC = () => {
     return () => unsubscribe();
   }, [dispatch, navigate]);
 
-  const completeSignIn = async (email: string) => {
-    setLoadingState(true);
-    setError('');
-    dispatch(setLoading(true));
-
-    try {
-      const user = await signInWithEmailLinkUrl(email, window.location.href);
-      dispatch(setAuthUser(user));
-
-      // Check if this was a signup completion
-      const wasSignup = window.localStorage.getItem('pendingSignupData') !== null;
-
-      // Navigate to auth redirect to handle profile completion check
-      navigate('/redirect');
-    } catch (err: any) {
-      setError(err.message || 'Sign-in failed. Please try again.');
-    } finally {
-      setLoadingState(false);
-      dispatch(setLoading(false));
-    }
-  };
-
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoadingState(true);
     setError('');
-    setSuccess('');
     dispatch(setLoading(true));
 
     try {
-      await sendSignInLinkToEmailAddress(email);
-      setSuccess('Check your email for the sign-in link!');
-      setEmail(''); // Clear the email field
+      const user = await loginWithEmailAndPassword(email, password);
+      dispatch(setAuthUser(user));
+      // Navigation will be handled by the useEffect auth state listener
     } catch (err: any) {
-      setError(err.message || 'Failed to send sign-in link. Please try again.');
+      setError(err.message || 'Login failed. Please check your credentials and try again.');
     } finally {
       setLoadingState(false);
       dispatch(setLoading(false));
@@ -125,12 +87,6 @@ const PatientLogin: React.FC = () => {
             </Alert>
           )}
 
-          {success && (
-            <Alert severity="success" sx={{ mb: 3 }}>
-              {success}
-            </Alert>
-          )}
-
           <form onSubmit={handleLogin}>
             <TextField
               fullWidth
@@ -141,17 +97,26 @@ const PatientLogin: React.FC = () => {
               margin="normal"
               required
               disabled={loading}
-              helperText="We'll send you a secure sign-in link"
+            />
+            <TextField
+              fullWidth
+              label="Password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              margin="normal"
+              required
+              disabled={loading}
             />
             <Button
               type="submit"
               fullWidth
               variant="contained"
               size="large"
-              disabled={loading || !email}
+              disabled={loading || !email || !password}
               sx={{ mt: 3, mb: 2, py: 1.5 }}
             >
-              {loading ? 'Sending Link...' : 'Send Sign-In Link'}
+              {loading ? 'Signing In...' : 'Sign In'}
             </Button>
           </form>
 
@@ -185,7 +150,7 @@ const PatientLogin: React.FC = () => {
 
           <Box textAlign="center" mt={3}>
             <Typography variant="body2" color="text.secondary">
-              Demo credentials: patient@afya.com / password
+              Enter your email and password to sign in
             </Typography>
           </Box>
         </Paper>
