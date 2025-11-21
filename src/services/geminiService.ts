@@ -24,21 +24,33 @@ export class GeminiService {
     try {
       // Check if we should use Firebase AI Logic
       this.useFirebaseAI = geminiConfig.useFirebaseAI && !!app;
+      console.log('Initializing AI service...', { useFirebaseAI: this.useFirebaseAI, hasApp: !!app });
 
       if (this.useFirebaseAI && app) {
-        // Initialize Firebase AI Logic with Gemini Developer API backend
-        this.ai = getAI(app, { backend: new GoogleAIBackend() });
+        console.log('Using Firebase AI Logic...');
+        try {
+          // Initialize Firebase AI Logic with Gemini Developer API backend
+          this.ai = getAI(app, { backend: new GoogleAIBackend() });
 
-        // Create a GenerativeModel instance with Gemini 2.0 Flash
-        this.model = getGenerativeModel(this.ai, {
-          model: 'gemini-2.0-flash-exp',
-          systemInstruction: this.getSystemInstruction()
-        });
-      } else {
+          // Create a GenerativeModel instance with Gemini 2.0 Flash
+          this.model = getGenerativeModel(this.ai, {
+            model: 'gemini-2.0-flash-exp',
+            systemInstruction: this.getSystemInstruction()
+          });
+          console.log('Firebase AI Logic initialized successfully');
+        } catch (firebaseError) {
+          console.warn('Firebase AI Logic failed, falling back to direct Google AI:', firebaseError);
+          this.useFirebaseAI = false;
+        }
+      }
+
+      if (!this.useFirebaseAI) {
+        console.log('Using direct Google Generative AI...');
         // Fallback to direct Google Generative AI
         const apiKey = geminiConfig.apiKey || process.env.REACT_APP_GEMINI_API_KEY;
-        if (!apiKey) {
-          throw new Error('Gemini API key not found. Please set REACT_APP_GEMINI_API_KEY environment variable.');
+        if (!apiKey || apiKey === 'YOUR_GEMINI_API_KEY_HERE') {
+          console.warn('Gemini API key not configured. AI responses will use fallback messages.');
+          return; // Exit early, will use fallback responses
         }
 
         this.genAI = new GoogleGenerativeAI(apiKey);
@@ -46,6 +58,7 @@ export class GeminiService {
           model: 'gemini-1.5-flash',
           systemInstruction: this.getSystemInstruction()
         });
+        console.log('Direct Google AI initialized successfully');
       }
 
       // Initialize chat with history
@@ -120,16 +133,21 @@ export class GeminiService {
       let aiResponse: string;
 
       if (this.useFirebaseAI && this.chat) {
+        console.log('Sending message via Firebase AI Logic...');
         // Firebase AI Logic response handling
         const result = await this.chat.sendMessage(message);
         const response = result.response;
         aiResponse = response.text();
+        console.log('Firebase AI response received');
       } else if (this.genAI && this.chat) {
+        console.log('Sending message via direct Google AI...');
         // Direct Google AI response handling
         const result = await this.chat.sendMessage(message);
         const response = await result.response;
         aiResponse = response.text();
+        console.log('Direct Google AI response received');
       } else {
+        console.log('No AI service available, using fallback response');
         // No AI service available, use fallback
         return this.getFallbackResponse(message);
       }
@@ -139,6 +157,7 @@ export class GeminiService {
       return aiResponse + disclaimer;
     } catch (error) {
       console.error('AI service error:', error);
+      console.log('Falling back to basic response due to AI error');
       return this.getFallbackResponse(message);
     }
   }

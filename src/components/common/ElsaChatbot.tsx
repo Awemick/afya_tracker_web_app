@@ -63,11 +63,15 @@ const ElsaChatbot: React.FC<ElsaChatbotProps> = ({ open, onClose }) => {
 
   const initializeGeminiService = async () => {
     try {
+      console.log('Initializing Gemini service...');
       // Initialize Gemini service with Firebase AI Logic or direct API
       const service = new GeminiService();
       setGeminiService(service);
+      console.log('Gemini service initialized successfully');
     } catch (error) {
       console.error('Failed to initialize Gemini service:', error);
+      // Still set the service so fallback responses work
+      setGeminiService(null);
     }
   };
 
@@ -86,8 +90,14 @@ const ElsaChatbot: React.FC<ElsaChatbotProps> = ({ open, onClose }) => {
   }, [messages]);
 
   const addWelcomeMessage = () => {
+    const aiStatus = geminiService ? 'AI-powered' : 'basic';
     const welcomeMessage: Message = {
-      text: 'Hi! I\'m Elsa, your AI health assistant. I\'m here to support you throughout your pregnancy journey. Feel free to ask me anything about pregnancy, health, or wellness!',
+      text: `Hi! I'm Elsa, your ${aiStatus} health assistant. I'm here to support you throughout your pregnancy journey. Feel free to ask me anything about pregnancy, health, or wellness!
+
+${fetalHealthService ? '✅ Fetal health AI analysis available' : '⚠️ Fetal health analysis initializing...'}
+${geminiService ? '✅ AI conversations enabled' : 'ℹ️ Using basic responses (add Gemini API key for AI chat)'}
+
+Try asking: "I felt 8 kicks in 2 hours" for AI fetal health analysis!`,
       isUser: false,
       timestamp: new Date(),
     };
@@ -124,11 +134,14 @@ const ElsaChatbot: React.FC<ElsaChatbotProps> = ({ open, onClose }) => {
 
       // Check if this is a fetal health related query
       if (isFetalHealthQuery(text)) {
+        console.log('Detected fetal health query, using ML model...');
         response = await getFetalHealthResponse(text);
       } else if (geminiService) {
+        console.log('Using Gemini AI for response...');
         // Use Gemini AI for intelligent responses
         response = await geminiService.sendMessage(text);
       } else {
+        console.log('Using fallback responses (Gemini not available)...');
         // Fallback to basic responses if Gemini is not available
         response = getFallbackResponse(text);
       }
