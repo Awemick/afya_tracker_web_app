@@ -76,7 +76,7 @@ const PatientSignupPage: React.FC = () => {
       const userData = {
         name: formData.name,
         email: formData.email,
-        role: 'patient',
+        role: 'patient' as const,
         phone: formData.phone,
         dueDate: formData.dueDate.toISOString(),
         pregnancyWeek: 0, // Will be calculated based on due date

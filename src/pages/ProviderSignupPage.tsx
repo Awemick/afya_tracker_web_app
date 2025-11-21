@@ -69,7 +69,7 @@ const ProviderSignupPage: React.FC = () => {
       const userData = {
         name: formData.name,
         email: formData.email,
-        role: 'provider',
+        role: 'provider' as const,
         phone: formData.phone,
         specialty: formData.specialty,
         licenseNumber: formData.licenseNumber,
