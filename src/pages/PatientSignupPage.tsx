@@ -16,7 +16,7 @@ import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { useNavigate } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
 import { setAuthUser } from '../store/slices/authSlice';
-import { sendSignInLinkToEmailAddress } from '../services/authService';
+import { signupWithEmailAndPassword } from '../services/authService';
 
 const PatientSignupPage: React.FC = () => {
   const navigate = useNavigate();
@@ -24,6 +24,7 @@ const PatientSignupPage: React.FC = () => {
   const [formData, setFormData] = useState({
     name: '',
     email: '',
+    password: '',
     phone: '',
     dueDate: null as Date | null,
     agreeToTerms: false,
@@ -65,9 +66,14 @@ const PatientSignupPage: React.FC = () => {
       return;
     }
 
+    if (formData.password.length < 6) {
+      setError('Password must be at least 6 characters long');
+      setLoading(false);
+      return;
+    }
+
     try {
-      // Store signup data in localStorage for later use
-      const signupData = {
+      const userData = {
         name: formData.name,
         email: formData.email,
         role: 'patient',
@@ -75,12 +81,13 @@ const PatientSignupPage: React.FC = () => {
         dueDate: formData.dueDate.toISOString(),
         pregnancyWeek: 0, // Will be calculated based on due date
       };
-      window.localStorage.setItem('pendingSignupData', JSON.stringify(signupData));
 
-      await sendSignInLinkToEmailAddress(formData.email);
-      setSuccess('Check your email for the verification link to complete your signup!');
+      const user = await signupWithEmailAndPassword(formData.email, formData.password, userData);
+      dispatch(setAuthUser(user));
+      setSuccess('Account created successfully! Welcome to Afya Tracker.');
+      // Navigation will be handled by the auth state listener
     } catch (err: any) {
-      setError(err.message || 'Failed to send verification link. Please try again.');
+      setError(err.message || 'Failed to create account. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -146,7 +153,17 @@ const PatientSignupPage: React.FC = () => {
                 margin="normal"
                 required
                 disabled={loading}
-                helperText="We'll send you a verification link"
+              />
+              <TextField
+                fullWidth
+                label="Password"
+                type="password"
+                value={formData.password}
+                onChange={handleInputChange('password')}
+                margin="normal"
+                required
+                disabled={loading}
+                helperText="Password must be at least 6 characters"
               />
               <TextField
                 fullWidth
@@ -193,7 +210,7 @@ const PatientSignupPage: React.FC = () => {
                 disabled={loading || !formData.agreeToTerms}
                 sx={{ mt: 3, mb: 2, py: 1.5 }}
               >
-                {loading ? 'Sending Link...' : 'Send Verification Link'}
+                {loading ? 'Creating Account...' : 'Create Account'}
               </Button>
             </form>
 

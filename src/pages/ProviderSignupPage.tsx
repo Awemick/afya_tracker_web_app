@@ -17,7 +17,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
 import { setAuthUser } from '../store/slices/authSlice';
-import { sendSignInLinkToEmailAddress } from '../services/authService';
+import { signupWithEmailAndPassword } from '../services/authService';
 
 const ProviderSignupPage: React.FC = () => {
   const navigate = useNavigate();
@@ -25,6 +25,7 @@ const ProviderSignupPage: React.FC = () => {
   const [formData, setFormData] = useState({
     name: '',
     email: '',
+    password: '',
     specialty: '',
     licenseNumber: '',
     institution: '',
@@ -58,9 +59,14 @@ const ProviderSignupPage: React.FC = () => {
       return;
     }
 
+    if (formData.password.length < 6) {
+      setError('Password must be at least 6 characters long');
+      setLoading(false);
+      return;
+    }
+
     try {
-      // Store signup data in localStorage for later use
-      const signupData = {
+      const userData = {
         name: formData.name,
         email: formData.email,
         role: 'provider',
@@ -69,12 +75,13 @@ const ProviderSignupPage: React.FC = () => {
         licenseNumber: formData.licenseNumber,
         institution: formData.institution,
       };
-      window.localStorage.setItem('pendingSignupData', JSON.stringify(signupData));
 
-      await sendSignInLinkToEmailAddress(formData.email);
-      setSuccess('Check your email for the verification link! Your account will be reviewed by administrators before approval.');
+      const user = await signupWithEmailAndPassword(formData.email, formData.password, userData);
+      dispatch(setAuthUser(user));
+      setSuccess('Account created successfully! Your account will be reviewed by administrators before full approval.');
+      // Navigation will be handled by the auth state listener
     } catch (err: any) {
-      setError(err.message || 'Failed to send verification link. Please try again.');
+      setError(err.message || 'Failed to create account. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -141,7 +148,16 @@ const ProviderSignupPage: React.FC = () => {
                 onChange={handleInputChange('email')}
                 required
                 disabled={loading}
-                helperText="We'll send you a verification link"
+              />
+              <TextField
+                fullWidth
+                label="Password"
+                type="password"
+                value={formData.password}
+                onChange={handleInputChange('password')}
+                required
+                disabled={loading}
+                helperText="Password must be at least 6 characters"
               />
               <TextField
                 fullWidth
@@ -198,7 +214,7 @@ const ProviderSignupPage: React.FC = () => {
               disabled={loading || !formData.agreeToTerms}
               sx={{ mt: 3, mb: 2, py: 1.5 }}
             >
-              {loading ? 'Sending Link...' : 'Send Verification Link'}
+              {loading ? 'Creating Account...' : 'Create Account'}
             </Button>
           </form>
 
