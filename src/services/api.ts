@@ -1977,4 +1977,77 @@ export const tasksAPI = {
   },
 };
 
+export const providerApprovalAPI = {
+  // Get all pending provider approvals
+  getPendingProviders: async () => {
+    try {
+      const usersRef = collection(db as any, 'users');
+      const q = query(
+        usersRef,
+        where('role', '==', 'provider'),
+        where('status', '==', 'pending_approval'),
+        orderBy('registrationDate', 'desc')
+      );
+      const querySnapshot = await getDocs(q);
+      const providers = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      return { data: providers };
+    } catch (error) {
+      console.error('Error fetching pending providers from Firebase:', error);
+      return api.get('/providers/pending');
+    }
+  },
+
+  // Approve a provider
+  approveProvider: async (providerId: string, adminId: string) => {
+    try {
+      const providerRef = doc(db as any, 'users', providerId);
+      await updateDoc(providerRef, {
+        status: 'active',
+        approvedAt: new Date().toISOString(),
+        approvedBy: adminId,
+        updatedAt: new Date().toISOString()
+      });
+      return { data: { id: providerId, status: 'active', approvedAt: new Date().toISOString(), approvedBy: adminId } };
+    } catch (error) {
+      console.error('Error approving provider in Firebase:', error);
+      return api.patch(`/providers/${providerId}/approve`, { adminId });
+    }
+  },
+
+  // Reject a provider
+  rejectProvider: async (providerId: string, adminId: string, reason: string) => {
+    try {
+      const providerRef = doc(db as any, 'users', providerId);
+      await updateDoc(providerRef, {
+        status: 'rejected',
+        rejectionReason: reason,
+        approvedBy: adminId,
+        updatedAt: new Date().toISOString()
+      });
+      return { data: { id: providerId, status: 'rejected', rejectionReason: reason, approvedBy: adminId } };
+    } catch (error) {
+      console.error('Error rejecting provider in Firebase:', error);
+      return api.patch(`/providers/${providerId}/reject`, { adminId, reason });
+    }
+  },
+
+  // Get all providers with their approval status
+  getAllProviders: async () => {
+    try {
+      const usersRef = collection(db as any, 'users');
+      const q = query(
+        usersRef,
+        where('role', '==', 'provider'),
+        orderBy('registrationDate', 'desc')
+      );
+      const querySnapshot = await getDocs(q);
+      const providers = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      return { data: providers };
+    } catch (error) {
+      console.error('Error fetching all providers from Firebase:', error);
+      return api.get('/providers');
+    }
+  },
+};
+
 export default api;

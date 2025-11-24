@@ -17,7 +17,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
 import { setAuthUser } from '../store/slices/authSlice';
-import { signupWithEmailAndPassword } from '../services/authService';
+import { signupWithEmailAndPassword, getFirebaseErrorMessage } from '../services/authService';
 
 const ProviderSignupPage: React.FC = () => {
   const navigate = useNavigate();
@@ -70,10 +70,12 @@ const ProviderSignupPage: React.FC = () => {
         name: formData.name,
         email: formData.email,
         role: 'provider' as const,
+        status: 'pending_approval' as const,
         phone: formData.phone,
         specialty: formData.specialty,
         licenseNumber: formData.licenseNumber,
-        institution: formData.institution,
+        institutionName: formData.institution,
+        registrationDate: new Date().toISOString(),
       };
 
       const user = await signupWithEmailAndPassword(formData.email, formData.password, userData);
@@ -81,7 +83,7 @@ const ProviderSignupPage: React.FC = () => {
       setSuccess('Account created successfully! Your account will be reviewed by administrators before full approval.');
       // Navigation will be handled by the auth state listener
     } catch (err: any) {
-      setError(err.message || 'Failed to create account. Please try again.');
+      setError(getFirebaseErrorMessage(err) || 'Failed to create account. Please try again.');
     } finally {
       setLoading(false);
     }

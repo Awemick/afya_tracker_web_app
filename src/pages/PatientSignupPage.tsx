@@ -16,7 +16,7 @@ import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { useNavigate } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
 import { setAuthUser } from '../store/slices/authSlice';
-import { signupWithEmailAndPassword } from '../services/authService';
+import { signupWithEmailAndPassword, getFirebaseErrorMessage } from '../services/authService';
 
 const PatientSignupPage: React.FC = () => {
   const navigate = useNavigate();
@@ -77,9 +77,11 @@ const PatientSignupPage: React.FC = () => {
         name: formData.name,
         email: formData.email,
         role: 'patient' as const,
+        status: 'active' as const,
         phone: formData.phone,
         dueDate: formData.dueDate.toISOString(),
         pregnancyWeek: 0, // Will be calculated based on due date
+        registrationDate: new Date().toISOString(),
       };
 
       const user = await signupWithEmailAndPassword(formData.email, formData.password, userData);
@@ -87,7 +89,7 @@ const PatientSignupPage: React.FC = () => {
       setSuccess('Account created successfully! Welcome to Afya Tracker.');
       // Navigation will be handled by the auth state listener
     } catch (err: any) {
-      setError(err.message || 'Failed to create account. Please try again.');
+      setError(getFirebaseErrorMessage(err) || 'Failed to create account. Please try again.');
     } finally {
       setLoading(false);
     }

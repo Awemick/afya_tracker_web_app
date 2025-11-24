@@ -488,8 +488,8 @@ const LandingPage: React.FC = () => {
                 borderRadius: 2,
               }}
               onClick={() => {
-                // Handle Android download
-                window.open('https://play.google.com/store/apps/details?id=com.afyatracker', '_blank');
+                // Handle Android download - direct to APK release
+                window.open('https://github.com/Awemick/afya_tracker_web_app/releases/download/vr.1.0/Afya.Tracker.apk', '_blank');
                 setDownloadDialogOpen(false);
               }}
             >
@@ -507,8 +507,8 @@ const LandingPage: React.FC = () => {
                 borderRadius: 2,
               }}
               onClick={() => {
-                // Handle iOS download
-                window.open('https://apps.apple.com/app/afya-tracker/id1234567890', '_blank');
+                // Handle iOS download - redirect to download page
+                window.open('/download.html', '_blank');
                 setDownloadDialogOpen(false);
               }}
             >

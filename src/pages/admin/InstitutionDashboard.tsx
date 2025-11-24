@@ -84,7 +84,7 @@ import {
   updateStaffMember,
   removeStaffMember,
 } from '../../store/slices/institutionsSlice';
-import { institutionAPI, staffAPI, patientAPI, appointmentAPI, alertAPI } from '../../services/api';
+import { institutionAPI, staffAPI, patientAPI, appointmentAPI, alertAPI, providerApprovalAPI } from '../../services/api';
 import { Institution, StaffMember } from '../../types';
 import PatientLinkingPortal from '../../components/common/PatientLinkingPortal';
 
@@ -349,6 +349,208 @@ const InstitutionDashboard: React.FC = () => {
     );
   };
 
+  // Provider Approval Panel Component
+  const ProviderApprovalPanel: React.FC<{ userId: string }> = ({ userId }) => {
+    const [pendingProviders, setPendingProviders] = useState<any[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [selectedProvider, setSelectedProvider] = useState<any>(null);
+    const [dialogOpen, setDialogOpen] = useState(false);
+    const [action, setAction] = useState<'approve' | 'reject'>('approve');
+    const [rejectionReason, setRejectionReason] = useState('');
+
+    useEffect(() => {
+      loadPendingProviders();
+    }, []);
+
+    const loadPendingProviders = async () => {
+      setLoading(true);
+      try {
+        const response = await providerApprovalAPI.getPendingProviders();
+        setPendingProviders(response.data);
+      } catch (error) {
+        console.error('Failed to load pending providers:', error);
+        setPendingProviders([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    const handleProviderAction = (provider: any, actionType: 'approve' | 'reject') => {
+      setSelectedProvider(provider);
+      setAction(actionType);
+      if (actionType === 'reject') {
+        setRejectionReason('');
+      }
+      setDialogOpen(true);
+    };
+
+    const handleConfirmAction = async () => {
+      if (!selectedProvider) return;
+
+      try {
+        if (action === 'approve') {
+          await providerApprovalAPI.approveProvider(selectedProvider.id, userId);
+          setPendingProviders(prev => prev.filter(p => p.id !== selectedProvider.id));
+        } else {
+          await providerApprovalAPI.rejectProvider(selectedProvider.id, userId, rejectionReason);
+          setPendingProviders(prev => prev.filter(p => p.id !== selectedProvider.id));
+        }
+        setDialogOpen(false);
+        setSelectedProvider(null);
+        setRejectionReason('');
+      } catch (error) {
+        console.error('Failed to process provider action:', error);
+      }
+    };
+
+    return (
+      <Box>
+        <Typography variant="h6" gutterBottom>
+          Provider Approval Queue ({pendingProviders.length} pending)
+        </Typography>
+
+        {loading ? (
+          <Typography>Loading pending providers...</Typography>
+        ) : pendingProviders.length === 0 ? (
+          <Box sx={{ textAlign: 'center', py: 6 }}>
+            <CheckCircle sx={{ fontSize: 64, color: 'success.main', mb: 2 }} />
+            <Typography variant="h6" color="text.secondary" gutterBottom>
+              No Pending Approvals
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              All provider applications have been reviewed
+            </Typography>
+          </Box>
+        ) : (
+          <TableContainer component={Paper}>
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Provider Details</TableCell>
+                  <TableCell>Credentials</TableCell>
+                  <TableCell>Registration Date</TableCell>
+                  <TableCell>Actions</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {pendingProviders.map((provider) => (
+                  <TableRow key={provider.id}>
+                    <TableCell>
+                      <Box>
+                        <Typography variant="subtitle2" fontWeight="bold">
+                          {provider.name}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {provider.email}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {provider.phone}
+                        </Typography>
+                      </Box>
+                    </TableCell>
+                    <TableCell>
+                      <Box>
+                        <Typography variant="body2">
+                          <strong>Specialty:</strong> {provider.specialization || provider.specialty}
+                        </Typography>
+                        <Typography variant="body2">
+                          <strong>License:</strong> {provider.licenseNumber}
+                        </Typography>
+                        <Typography variant="body2">
+                          <strong>Institution:</strong> {provider.institutionName}
+                        </Typography>
+                      </Box>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2">
+                        {new Date(provider.registrationDate).toLocaleDateString()}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {new Date(provider.registrationDate).toLocaleTimeString()}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Box sx={{ display: 'flex', gap: 1 }}>
+                        <Button
+                          size="small"
+                          variant="contained"
+                          color="success"
+                          onClick={() => handleProviderAction(provider, 'approve')}
+                        >
+                          Approve
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          color="error"
+                          onClick={() => handleProviderAction(provider, 'reject')}
+                        >
+                          Reject
+                        </Button>
+                      </Box>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
+
+        {/* Approval/Rejection Dialog */}
+        <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
+          <DialogTitle>
+            {action === 'approve' ? 'Approve Provider' : 'Reject Provider Application'}
+          </DialogTitle>
+          <DialogContent>
+            {selectedProvider && (
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="subtitle1" fontWeight="bold">
+                  {selectedProvider.name}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {selectedProvider.specialization || selectedProvider.specialty} • {selectedProvider.institutionName}
+                </Typography>
+              </Box>
+            )}
+
+            {action === 'approve' ? (
+              <Typography>
+                Are you sure you want to approve this healthcare provider? They will gain full access to patient management features.
+              </Typography>
+            ) : (
+              <Box>
+                <Typography sx={{ mb: 2 }}>
+                  Please provide a reason for rejecting this application:
+                </Typography>
+                <TextField
+                  fullWidth
+                  multiline
+                  rows={3}
+                  label="Rejection Reason"
+                  value={rejectionReason}
+                  onChange={(e) => setRejectionReason(e.target.value)}
+                  placeholder="Please explain why this application is being rejected..."
+                  required
+                />
+              </Box>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
+            <Button
+              onClick={handleConfirmAction}
+              variant="contained"
+              color={action === 'approve' ? 'success' : 'error'}
+              disabled={action === 'reject' && !rejectionReason.trim()}
+            >
+              {action === 'approve' ? 'Approve Provider' : 'Reject Application'}
+            </Button>
+          </DialogActions>
+        </Dialog>
+      </Box>
+    );
+  };
+
   if (user?.role !== 'admin') {
     return (
       <Box sx={{ p: 3 }}>
@@ -504,6 +706,7 @@ const InstitutionDashboard: React.FC = () => {
               <Tab icon={<People />} label="Staff" />
               <Tab icon={<Analytics />} label="Analytics" />
               <Tab icon={<LinkIcon />} label="Patient Linking" />
+              <Tab icon={<Security />} label="Provider Approvals" />
               <Tab icon={<Settings />} label="Settings" />
             </Tabs>
           </Box>
@@ -869,6 +1072,10 @@ const InstitutionDashboard: React.FC = () => {
           </TabPanel>
 
           <TabPanel value={tabValue} index={4}>
+            <ProviderApprovalPanel userId={user?.id || ''} />
+          </TabPanel>
+
+          <TabPanel value={tabValue} index={5}>
             <Box>
               <Typography variant="h6" gutterBottom>
                 Institution Settings & Configuration

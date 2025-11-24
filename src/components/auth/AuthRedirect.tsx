@@ -1,14 +1,16 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '../../store/store';
 import { Box, CircularProgress, Typography } from '@mui/material';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { auth } from '../../firebase';
+import { updateUserData } from '../../store/slices/authSlice';
 
 const AuthRedirect: React.FC = () => {
   const navigate = useNavigate();
+  const dispatch = useDispatch();
   const { user, loading } = useSelector((state: RootState) => state.auth);
 
   useEffect(() => {
@@ -26,7 +28,9 @@ const AuthRedirect: React.FC = () => {
       try {
         if (!db) {
           console.error('Firestore not initialized');
-          navigate('/profile-setup');
+          // Use role from Redux as fallback
+          const role = user.role || 'patient';
+          navigate(role === 'provider' ? '/provider/dashboard' : '/patient/dashboard');
           return;
         }
 
@@ -35,26 +39,51 @@ const AuthRedirect: React.FC = () => {
 
         if (docSnap.exists()) {
           const userData = docSnap.data();
+
+          // Update Redux store with latest user data from Firestore
+          dispatch(updateUserData({
+            role: userData.role,
+            status: userData.status,
+            // Add other fields that might have changed
+          }));
+
           if (userData?.profileCompleted) {
             // Profile completed, redirect based on role
-            const role = userData.role || 'patient';
-            if (role === 'provider') {
-              navigate('/provider/dashboard');
+            const role = userData.role || user.role || 'patient';
+            if (role === 'provider' || role === 'institution' || role === 'admin') {
+              navigate(`/${role}/dashboard`);
             } else {
               navigate('/patient/dashboard');
             }
           } else {
-            // Profile not completed, go to profile setup
-            navigate('/profile-setup');
+            // Profile not completed - only patients need profile setup
+            const role = userData.role || user.role || 'patient';
+            if (role === 'patient') {
+              navigate('/profile-setup');
+            } else {
+              // Providers/institutions/admins go to their dashboard even without completed profile
+              navigate(`/${role}/dashboard`);
+            }
           }
         } else {
-          // No profile data, go to profile setup
-          navigate('/profile-setup');
+          // No profile data - only patients need profile setup
+          const role = user.role || 'patient';
+          if (role === 'patient') {
+            navigate('/profile-setup');
+          } else {
+            // Providers/institutions/admins go to their dashboard
+            navigate(`/${role}/dashboard`);
+          }
         }
       } catch (error) {
         console.error('Error checking profile:', error);
-        // On error, go to profile setup to be safe
-        navigate('/profile-setup');
+        // On error (like offline), use role from Redux to determine dashboard
+        const role = user.role || 'patient';
+        if (role === 'provider' || role === 'institution' || role === 'admin') {
+          navigate(`/${role}/dashboard`);
+        } else {
+          navigate('/patient/dashboard');
+        }
       }
     };
 

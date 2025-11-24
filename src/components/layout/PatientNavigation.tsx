@@ -25,6 +25,7 @@ import {
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { logout } from '../../store/slices/authSlice';
+import { logoutUser } from '../../services/authService';
 import { toggleTheme } from '../../store/slices/themeSlice';
 import { RootState } from '../../store/store';
 
@@ -64,9 +65,17 @@ const PatientNavigation: React.FC<PatientNavigationProps> = ({ children }) => {
     handleClose();
   };
 
-  const handleLogout = () => {
-    dispatch(logout());
-    navigate('/login');
+  const handleLogout = async () => {
+    try {
+      await logoutUser();
+      dispatch(logout());
+      navigate('/login');
+    } catch (error) {
+      console.error('Logout error:', error);
+      // Still logout locally even if Firebase logout fails
+      dispatch(logout());
+      navigate('/login');
+    }
     handleClose();
   };
 

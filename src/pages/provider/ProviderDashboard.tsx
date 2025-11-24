@@ -12,6 +12,7 @@ import {
   DialogTitle,
   DialogContent,
   Button,
+  Alert,
 } from '@mui/material';
 import {
   People,
@@ -29,13 +30,21 @@ import DigitalRecordStorage from '../../components/common/DigitalRecordStorage';
 import ReferralSystem from '../../components/common/ReferralSystem';
 import TaskReminderSystem from '../../components/common/TaskReminderSystem';
 import { Prescription, Appointment } from '../../types';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '../../store/store';
 import { appointmentAPI } from '../../services/api';
+import { refreshUserDataAsync } from '../../store/slices/authSlice';
+import { Refresh } from '@mui/icons-material';
 
 const ProviderDashboard: React.FC = () => {
   const navigate = useNavigate();
-  const { user } = useSelector((state: RootState) => state.auth);
+  const dispatch = useDispatch();
+  const { user, loading } = useSelector((state: RootState) => state.auth);
+
+  // Check if provider is approved
+  const isApproved = user?.status === 'active';
+  const isPendingApproval = user?.status === 'pending_approval';
+  const isRejected = user?.status === 'rejected';
   const [prescriptionDialogOpen, setPrescriptionDialogOpen] = useState(false);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [appointmentsLoading, setAppointmentsLoading] = useState(false);
@@ -90,28 +99,34 @@ const ProviderDashboard: React.FC = () => {
     console.log('Prescription saved:', prescription);
   };
 
-  const StatCard = ({ title, value, icon, color, onClick }: any) => (
+  const handleRefreshStatus = () => {
+    (dispatch as any)(refreshUserDataAsync());
+  };
+
+  const StatCard = ({ title, value, icon, color, onClick, disabled }: any) => (
     <Card
       sx={{
-        cursor: 'pointer',
+        cursor: disabled ? 'not-allowed' : 'pointer',
         transition: 'transform 0.2s',
-        '&:hover': { transform: 'translateY(-4px)' }
+        opacity: disabled ? 0.6 : 1,
+        '&:hover': disabled ? {} : { transform: 'translateY(-4px)' }
       }}
-      onClick={onClick}
+      onClick={disabled ? undefined : onClick}
     >
       <CardContent>
         <Box display="flex" alignItems="center" justifyContent="space-between">
           <Box>
-            <Typography variant="h4" fontWeight="bold" color={color}>
+            <Typography variant="h4" fontWeight="bold" color={disabled ? 'text.secondary' : color}>
               {value}
             </Typography>
             <Typography variant="body2" color="text.secondary">
               {title}
+              {disabled && ' (Approval Required)'}
             </Typography>
           </Box>
           <Box
             sx={{
-              backgroundColor: `${color}20`,
+              backgroundColor: disabled ? 'grey.200' : `${color}20`,
               borderRadius: '50%',
               p: 1,
             }}
@@ -123,13 +138,66 @@ const ProviderDashboard: React.FC = () => {
     </Card>
   );
 
+  // Show pending approval banner for pending providers
+  const showPendingBanner = isPendingApproval;
+
+  // Show rejection message if rejected
+  if (isRejected) {
+    return (
+      <Box sx={{ p: 3, minHeight: '80vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Paper sx={{ p: 6, textAlign: 'center', maxWidth: 600 }}>
+          <Typography variant="h4" color="error.main" gutterBottom>
+            Account Not Approved
+          </Typography>
+          <Typography variant="body1" sx={{ mb: 3 }}>
+            Unfortunately, your healthcare provider account application was not approved.
+          </Typography>
+          {user?.rejectionReason && (
+            <Alert severity="error" sx={{ mb: 3, textAlign: 'left' }}>
+              <Typography variant="body2">
+                <strong>Reason:</strong> {user.rejectionReason}
+              </Typography>
+            </Alert>
+          )}
+          <Typography variant="body2" color="text.secondary">
+            If you believe this was an error, please contact our support team.
+          </Typography>
+        </Paper>
+      </Box>
+    );
+  }
+
   return (
     <Box sx={{ p: 3 }}>
+      {/* Pending Approval Banner */}
+      {showPendingBanner && (
+        <Alert
+          severity="warning"
+          sx={{ mb: 3 }}
+          action={
+            <Button
+              color="inherit"
+              size="small"
+              startIcon={<Refresh />}
+              onClick={handleRefreshStatus}
+              disabled={loading}
+            >
+              {loading ? 'Refreshing...' : 'Check Status'}
+            </Button>
+          }
+        >
+          <Typography variant="body2">
+            <strong>Account Under Review:</strong> Your healthcare provider account is currently being reviewed by our administrators.
+            You have limited access to features until approval. Click "Check Status" to refresh your approval status.
+          </Typography>
+        </Alert>
+      )}
+
       {/* Header */}
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={4}>
         <Box>
           <Typography variant="h4" fontWeight="bold" gutterBottom>
-            Welcome, Dr. Wanjiku
+            Welcome, Dr. {user?.name?.split(' ')[0] || 'Provider'}
           </Typography>
           <Typography variant="body1" color="text.secondary">
             Here's your maternal health overview
@@ -140,9 +208,14 @@ const ProviderDashboard: React.FC = () => {
             variant="contained"
             startIcon={<MedicalServices />}
             onClick={() => setPrescriptionDialogOpen(true)}
-            sx={{ backgroundColor: 'success.main', '&:hover': { backgroundColor: 'success.dark' } }}
+            disabled={isPendingApproval}
+            sx={{
+              backgroundColor: isPendingApproval ? 'grey.400' : 'success.main',
+              '&:hover': { backgroundColor: isPendingApproval ? 'grey.400' : 'success.dark' }
+            }}
           >
             Write Prescription
+            {isPendingApproval && ' (Approval Required)'}
           </Button>
           <IconButton
             sx={{
@@ -164,6 +237,7 @@ const ProviderDashboard: React.FC = () => {
           icon={<People sx={{ color: 'primary.main' }} />}
           color="primary.main"
           onClick={() => navigate('/provider/patients')}
+          disabled={isPendingApproval}
         />
         <StatCard
           title="Active Consultations"
@@ -190,6 +264,7 @@ const ProviderDashboard: React.FC = () => {
           icon={<MedicalServices sx={{ color: 'success.main' }} />}
           color="success.main"
           onClick={() => setPrescriptionDialogOpen(true)}
+          disabled={isPendingApproval}
         />
       </Box>
 

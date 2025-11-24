@@ -13,45 +13,11 @@ import {
   User as FirebaseUser,
   updateProfile
 } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 
-export interface AuthUser extends User {
+export interface AuthUser extends Omit<User, 'firebaseUser'> {
   firebaseUser?: FirebaseUser;
 }
-
-// Utility function to convert Firebase error codes to user-friendly messages
-export const getFirebaseErrorMessage = (error: any): string => {
-  const errorCode = error?.code || '';
-  const errorMessage = error?.message || '';
-
-  switch (errorCode) {
-    case 'auth/email-already-in-use':
-      return 'An account with this email already exists. Please try signing in instead.';
-    case 'auth/weak-password':
-      return 'Password is too weak. Please choose a stronger password.';
-    case 'auth/invalid-email':
-      return 'Please enter a valid email address.';
-    case 'auth/user-disabled':
-      return 'This account has been disabled. Please contact support.';
-    case 'auth/user-not-found':
-      return 'No account found with this email address.';
-    case 'auth/wrong-password':
-      return 'Incorrect password. Please try again.';
-    case 'auth/too-many-requests':
-      return 'Too many failed attempts. Please try again later.';
-    case 'auth/network-request-failed':
-      return 'Network error. Please check your internet connection.';
-    case 'auth/operation-not-allowed':
-      return 'This sign-in method is not enabled.';
-    default:
-      // If it's already a user-friendly message, return it
-      if (errorMessage && !errorMessage.includes('Firebase:')) {
-        return errorMessage;
-      }
-      // Otherwise return a generic message
-      return 'An error occurred. Please try again.';
-  }
-};
 
 // ActionCodeSettings for email link authentication
 const actionCodeSettings: ActionCodeSettings = {
@@ -149,47 +115,6 @@ export const logoutUser = async (): Promise<void> => {
   }
 };
 
-// Refresh user data from Firestore
-export const refreshUserData = async (firebaseUser: any): Promise<AuthUser> => {
-  // Try to get user data from Firestore
-  let userRole: 'patient' | 'provider' | 'admin' | 'institution' = 'patient'; // Default
-  let userStatus: 'active' | 'pending_approval' | 'suspended' | 'rejected' | undefined;
-
-  try {
-    if (db) {
-      const docRef = doc(db, 'users', firebaseUser.uid);
-      const docSnap = await getDoc(docRef);
-
-      if (docSnap.exists()) {
-        const userData = docSnap.data();
-        const role = userData?.role;
-        const status = userData?.status;
-
-        if (role === 'patient' || role === 'provider' || role === 'admin' || role === 'institution') {
-          userRole = role;
-        }
-        if (status === 'active' || status === 'pending_approval' || status === 'suspended' || status === 'rejected') {
-          userStatus = status;
-        }
-      }
-    }
-  } catch (firestoreError) {
-    console.warn('Could not fetch user data from Firestore, using defaults:', firestoreError);
-    // Continue with default values
-  }
-
-  const authUser: AuthUser = {
-    id: firebaseUser.uid,
-    name: firebaseUser.displayName || firebaseUser.email || '',
-    email: firebaseUser.email || '',
-    role: userRole,
-    status: userStatus,
-    firebaseUser
-  };
-
-  return authUser;
-};
-
 // Listen for authentication state changes
 export const onAuthStateChange = (
   callback: (user: AuthUser | null) => void
@@ -201,7 +126,25 @@ export const onAuthStateChange = (
 
   return onAuthStateChanged(auth, async (firebaseUser) => {
     if (firebaseUser) {
-      const authUser = await refreshUserData(firebaseUser);
+      let role: 'patient' | 'provider' | 'institution' | 'admin' = 'patient';
+      if (db) {
+        try {
+          const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+          const userData = userDoc.data();
+          const validRoles = ['patient', 'provider', 'institution', 'admin'];
+          const fetchedRole = userData?.role;
+          role = validRoles.includes(fetchedRole) ? (fetchedRole as typeof role) : 'patient';
+        } catch (error) {
+          console.error('Error fetching user role:', error);
+        }
+      }
+      const authUser: AuthUser = {
+        id: firebaseUser.uid,
+        name: firebaseUser.displayName || firebaseUser.email || '',
+        email: firebaseUser.email || '',
+        role: role,
+        firebaseUser
+      };
       callback(authUser);
     } else {
       callback(null);
@@ -214,43 +157,27 @@ export const loginWithEmailAndPassword = async (email: string, password: string)
   if (!auth) {
     throw new Error('Firebase auth not initialized');
   }
+  if (!db) {
+    throw new Error('Firestore not initialized');
+  }
 
   try {
     const result = await signInWithEmailAndPassword(auth, email, password);
     const firebaseUser = result.user;
 
-    // Try to get user data from Firestore
-    let userRole: 'patient' | 'provider' | 'admin' | 'institution' = 'patient'; // Default
-    let userStatus: 'active' | 'pending_approval' | 'suspended' | 'rejected' | undefined;
-
-    try {
-      if (db) {
-        const docRef = doc(db, 'users', firebaseUser.uid);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          const userData = docSnap.data();
-          const role = userData?.role;
-          const status = userData?.status;
-          if (role === 'patient' || role === 'provider' || role === 'admin' || role === 'institution') {
-            userRole = role;
-          }
-          if (status === 'active' || status === 'pending_approval' || status === 'suspended' || status === 'rejected') {
-            userStatus = status;
-          }
-        }
-      }
-    } catch (firestoreError) {
-      console.warn('Could not fetch user data from Firestore, using defaults:', firestoreError);
-      // Continue with default values
-    }
+    // Fetch user role from Firestore
+    const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+    const userData = userDoc.data();
+    const validRoles = ['patient', 'provider', 'institution', 'admin'];
+    const fetchedRole = userData?.role;
+    const role = validRoles.includes(fetchedRole) ? (fetchedRole as 'patient' | 'provider' | 'institution' | 'admin') : 'patient';
 
     // Create AuthUser object
     const authUser: AuthUser = {
       id: firebaseUser.uid,
       name: firebaseUser.displayName || firebaseUser.email || '',
       email: firebaseUser.email || '',
-      role: userRole,
-      status: userStatus,
+      role: role,
       firebaseUser
     };
 
@@ -279,26 +206,6 @@ export const signupWithEmailAndPassword = async (
       await updateProfile(firebaseUser, {
         displayName: userData.name
       });
-    }
-
-    // Save user data to Firestore
-    if (db) {
-      try {
-        const userDocRef = doc(db, 'users', firebaseUser.uid);
-        await setDoc(userDocRef, {
-          ...userData,
-          id: firebaseUser.uid,
-          email: firebaseUser.email,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        });
-        console.log('User data saved to Firestore:', userData);
-      } catch (firestoreError) {
-        console.error('Error saving user data to Firestore:', firestoreError);
-        // Continue with signup even if Firestore save fails
-      }
-    } else {
-      console.warn('Firestore not initialized, user data not saved');
     }
 
     // Create AuthUser object
