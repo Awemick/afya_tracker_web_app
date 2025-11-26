@@ -38,6 +38,7 @@ import {
 import MobileAppPromotion from '../../components/common/MobileAppPromotion';
 import ElsaChatbot from '../../components/common/ElsaChatbot';
 import AppointmentBooking from '../../components/appointments/AppointmentBooking';
+import KickCounter from '../../components/common/KickCounter';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '../../store/store';
 import { useNavigate } from 'react-router-dom';
@@ -53,19 +54,12 @@ const PatientDashboard: React.FC = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const [kickDialogOpen, setKickDialogOpen] = useState(false);
+  const [kickAnalysisResult, setKickAnalysisResult] = useState<any>(null);
   const [emergencyDialogOpen, setEmergencyDialogOpen] = useState(false);
   const [chatbotOpen, setChatbotOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [appointmentDialogOpen, setAppointmentDialogOpen] = useState(false);
   const [subscriptionDialogOpen, setSubscriptionDialogOpen] = useState(false);
-  const [kickData, setKickData] = useState({
-    count: '',
-    duration: '',
-    position: 'sitting',
-    intensity: 'medium',
-    notes: '',
-  });
-  const [tapCount, setTapCount] = useState(0);
   const [emergencyData, setEmergencyData] = useState({
     type: 'pain',
     description: '',
@@ -246,12 +240,11 @@ const PatientDashboard: React.FC = () => {
     return filteredActivities.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()).slice(0, 5);
   };
 
-  const handleRecordKick = () => {
-    const finalCount = tapCount > 0 ? tapCount.toString() : kickData.count;
-    console.log('Recording kick session:', { ...kickData, count: finalCount });
-    setKickDialogOpen(false);
-    setKickData({ count: '', duration: '', position: 'sitting', intensity: 'medium', notes: '' });
-    setTapCount(0);
+  const handleKickSessionComplete = (session: any, assessment: any) => {
+    console.log('Kick session completed:', session, assessment);
+    setKickAnalysisResult({ session, assessment });
+    // Reload user data to show updated kick sessions
+    loadUserData();
   };
 
   const handleEmergencyAlert = () => {
@@ -601,129 +594,12 @@ const PatientDashboard: React.FC = () => {
         <BabyChangingStation />
       </Fab>
 
-      {/* Record Kick Session Dialog */}
-      <Dialog open={kickDialogOpen} onClose={() => setKickDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Record Fetal Kick Session</DialogTitle>
-        <DialogContent>
-          {/* Tap Counter Section */}
-          <Box sx={{ textAlign: 'center', mb: 3, p: 2, border: '2px dashed', borderColor: 'primary.main', borderRadius: 2 }}>
-            <Typography variant="h6" sx={{ mb: 2, color: 'primary.main' }}>
-              Tap to Count Kicks
-            </Typography>
-            <Box
-              sx={{
-                width: 120,
-                height: 120,
-                borderRadius: '50%',
-                backgroundColor: 'primary.main',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                mx: 'auto',
-                mb: 2,
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                '&:hover': {
-                  backgroundColor: 'primary.dark',
-                  transform: 'scale(1.05)',
-                },
-                '&:active': {
-                  transform: 'scale(0.95)',
-                }
-              }}
-              onClick={() => setTapCount(prev => prev + 1)}
-            >
-              <Typography variant="h3" sx={{ color: 'white', fontWeight: 'bold' }}>
-                {tapCount}
-              </Typography>
-            </Box>
-            <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
-              <Button
-                size="small"
-                variant="outlined"
-                onClick={() => setTapCount(0)}
-                sx={{ minWidth: 60 }}
-              >
-                Reset
-              </Button>
-              <Button
-                size="small"
-                variant="outlined"
-                onClick={() => setTapCount(prev => Math.max(0, prev - 1))}
-                sx={{ minWidth: 60 }}
-              >
-                -1
-              </Button>
-            </Box>
-          </Box>
-
-          <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
-            Or enter manually:
-          </Typography>
-
-          <TextField
-            fullWidth
-            label="Number of Kicks"
-            type="number"
-            value={tapCount > 0 ? tapCount.toString() : kickData.count}
-            onChange={(e) => {
-              const value = e.target.value;
-              setTapCount(parseInt(value) || 0);
-              setKickData({ ...kickData, count: value });
-            }}
-            margin="normal"
-            required
-          />
-          <TextField
-            fullWidth
-            label="Duration (minutes)"
-            type="number"
-            value={kickData.duration}
-            onChange={(e) => setKickData({ ...kickData, duration: e.target.value })}
-            margin="normal"
-            required
-          />
-          <FormControl fullWidth margin="normal">
-            <InputLabel>Position</InputLabel>
-            <Select
-              value={kickData.position}
-              onChange={(e) => setKickData({ ...kickData, position: e.target.value })}
-              label="Position"
-            >
-              <MenuItem value="sitting">Sitting</MenuItem>
-              <MenuItem value="lying">Lying Down</MenuItem>
-              <MenuItem value="standing">Standing</MenuItem>
-            </Select>
-          </FormControl>
-          <FormControl fullWidth margin="normal">
-            <InputLabel>Intensity</InputLabel>
-            <Select
-              value={kickData.intensity}
-              onChange={(e) => setKickData({ ...kickData, intensity: e.target.value })}
-              label="Intensity"
-            >
-              <MenuItem value="low">Low</MenuItem>
-              <MenuItem value="medium">Medium</MenuItem>
-              <MenuItem value="high">High</MenuItem>
-            </Select>
-          </FormControl>
-          <TextField
-            fullWidth
-            label="Notes (optional)"
-            multiline
-            rows={3}
-            value={kickData.notes}
-            onChange={(e) => setKickData({ ...kickData, notes: e.target.value })}
-            margin="normal"
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setKickDialogOpen(false)}>Cancel</Button>
-          <Button onClick={handleRecordKick} variant="contained">
-            Record Session
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {/* Advanced Fetal Health Kick Counter */}
+      <KickCounter
+        open={kickDialogOpen}
+        onClose={() => setKickDialogOpen(false)}
+        onSessionComplete={handleKickSessionComplete}
+      />
 
       {/* Emergency Alert Dialog */}
       <Dialog open={emergencyDialogOpen} onClose={() => setEmergencyDialogOpen(false)} maxWidth="sm" fullWidth>

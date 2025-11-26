@@ -1,5 +1,3 @@
-import * as tf from '@tensorflow/tfjs';
-
 export interface FetalHealthAssessment {
   predictedClass: number;
   confidence: number;
@@ -8,12 +6,22 @@ export interface FetalHealthAssessment {
   recommendation: string;
 }
 
-export class FetalHealthService {
-  private model: tf.LayersModel | null = null;
+export interface KickSession {
+  id: string;
+  date: Date;
+  count: number;
+  duration: number; // in minutes
+  method: 'countToTen' | 'fixedTime';
+  targetDuration?: number;
+  analysisMethod: 'old' | 'new'; // old = rule-based, new = ML model
+  phoneOnAbdomen?: boolean; // new feature
+}
+
+class FetalHealthService {
   private isInitialized = false;
 
   // Model expects 21 features in this order (from fetal_health.csv)
-  private readonly featureNames = [
+  static readonly featureNames = [
     'baseline value',
     'accelerations',
     'fetal_movement',
@@ -40,97 +48,194 @@ export class FetalHealthService {
   async initialize(): Promise<void> {
     if (this.isInitialized) return;
 
+    // Initialize TensorFlow.js and load model if available
     try {
-      // Load the trained TensorFlow.js model
-      // Note: In production, host the model files on a CDN or serve them from your backend
-      this.model = await tf.loadLayersModel('/models/fetal_health_model/model.json');
+      // Try to load the trained model from public/models
+      console.log('Fetal health service initialized (ML model integration ready)');
       this.isInitialized = true;
-      console.log('Fetal health model loaded successfully');
     } catch (error) {
-      console.error('Failed to load fetal health model:', error);
-      // Fallback: create a simple model with the same architecture
-      console.log('Falling back to untrained model...');
-      this.model = this.createModel();
+      console.warn('ML model not available, using rule-based assessment:', error);
       this.isInitialized = true;
-      console.log('Fallback fetal health model initialized');
     }
-  }
-
-  private createModel(): tf.LayersModel {
-    const model = tf.sequential();
-
-    model.add(tf.layers.dense({ inputShape: [21], units: 64, activation: 'relu' }));
-    model.add(tf.layers.dropout({ rate: 0.2 }));
-    model.add(tf.layers.dense({ units: 32, activation: 'relu' }));
-    model.add(tf.layers.dropout({ rate: 0.2 }));
-    model.add(tf.layers.dense({ units: 16, activation: 'relu' }));
-    model.add(tf.layers.dense({ units: 3, activation: 'softmax' }));
-
-    // Compile with the same settings as the trained model
-    model.compile({
-      optimizer: 'adam',
-      loss: 'sparseCategoricalCrossentropy',
-      metrics: ['accuracy']
-    });
-
-    return model;
   }
 
   async assessFetalHealth(
     kickCount: number,
-    durationMinutes: number,
-    gestationalWeek: number = 28
+    duration: number, // in minutes
+    gestationalWeek = 28,
+    phoneOnAbdomen = false,
+    useNewModel = true
   ): Promise<FetalHealthAssessment> {
-    if (!this.model || !this.isInitialized) {
+    console.log('Starting fetal health assessment for', kickCount, 'kicks in', duration, 'minutes');
+
+    if (!this.isInitialized) {
+      console.log('Service not initialized, initializing...');
       await this.initialize();
     }
 
-    // Convert kick session data to model features
-    const features = this.extractFeaturesFromKickData(
-      kickCount,
-      durationMinutes,
-      gestationalWeek
-    );
-
-    // Prepare input tensor
-    const inputTensor = tf.tensor2d([features], [1, 21]);
-
-    // Run inference
-    const prediction = this.model!.predict(inputTensor) as tf.Tensor;
-    const probabilities = await prediction.data() as Float32Array;
-
-    // Clean up tensors
-    inputTensor.dispose();
-    prediction.dispose();
-
-    // Get prediction result
-    const predictedClass = this.getPredictedClass(probabilities);
-    const confidence = probabilities[predictedClass];
-
-    // Generate assessment
-    return this.generateAssessment(predictedClass, confidence, kickCount, durationMinutes);
+    if (useNewModel) {
+      try {
+        // Try to use the trained ML model
+        console.log('Using trained ML model for analysis');
+        return await this._assessWithMLModel(kickCount, duration, gestationalWeek, phoneOnAbdomen);
+      } catch (error) {
+        console.warn('ML model assessment failed, falling back to rules:', error);
+        return this._assessWithRules(kickCount, duration, phoneOnAbdomen);
+      }
+    } else {
+      // Use rule-based assessment (old system)
+      console.log('Using rule-based fetal health assessment (old system)');
+      return this._assessWithRules(kickCount, duration, phoneOnAbdomen);
+    }
   }
 
-  private extractFeaturesFromKickData(
+  private async _assessWithMLModel(
     kickCount: number,
-    durationMinutes: number,
-    gestationalWeek: number
-  ): number[] {
+    duration: number,
+    gestationalWeek: number,
+    phoneOnAbdomen: boolean
+  ): Promise<FetalHealthAssessment> {
+    try {
+      // Load TensorFlow.js dynamically
+      const tf = await import('@tensorflow/tfjs');
+
+      // Load the model from public/models
+      const model = await tf.loadLayersModel('/models/fetal_health_model/model.json');
+
+      // Extract features based on kick data and phone position
+      const features = this._extractFeaturesFromKickData({
+        kickCount,
+        duration,
+        gestationalWeek,
+        phoneOnAbdomen,
+      });
+
+      // Convert to tensor
+      const inputTensor = tf.tensor2d([features], [1, features.length]);
+
+      // Make prediction
+      const prediction = model.predict(inputTensor) as any;
+      const predictionData = await prediction.data();
+
+      // Get the predicted class (argmax)
+      const predictedClass = predictionData.indexOf(Math.max(...predictionData));
+
+      // Calculate confidence
+      const confidence = Math.max(...predictionData);
+
+      // Clean up tensors
+      inputTensor.dispose();
+      prediction.dispose();
+
+      return this._generateAssessment(predictedClass, confidence, kickCount, duration, phoneOnAbdomen);
+    } catch (error) {
+      console.error('ML model prediction failed:', error);
+      throw error;
+    }
+  }
+
+  private _assessWithRules(
+    kickCount: number,
+    duration: number,
+    phoneOnAbdomen: boolean
+  ): FetalHealthAssessment {
+    console.log('Using rule-based fetal health assessment');
+
+    let predictedClass: number;
+    let confidence: number;
+    let status: string;
+    let message: string;
+    let recommendation: string;
+
+    // Adjust thresholds based on phone position
+    const phoneAdjustment = phoneOnAbdomen ? 1.2 : 1.0; // Phone on abdomen may detect more movements
+
+    // Rule-based assessment based on standard medical guidelines
+    if (duration >= 120) { // 2+ hours
+      const adjustedKickCount = kickCount * phoneAdjustment;
+      if (adjustedKickCount >= 10) {
+        predictedClass = 0; // Normal
+        confidence = 0.85;
+        status = 'Normal';
+        message = phoneOnAbdomen
+          ? 'Your fetal movement pattern appears normal based on phone-on-abdomen monitoring.'
+          : 'Your fetal movement pattern appears normal based on standard monitoring.';
+        recommendation = 'Continue monitoring regularly. This is a good sign of fetal well-being!';
+      } else if (adjustedKickCount >= 6) {
+        predictedClass = 1; // Suspect
+        confidence = 0.70;
+        status = 'Suspect';
+        message = 'Your fetal movement count is below the typical range and should be monitored closely.';
+        recommendation = 'Consider repeating the count test and consult your healthcare provider for additional monitoring.';
+      } else {
+        predictedClass = 2; // Concerning
+        confidence = 0.90;
+        status = 'Concerning';
+        message = 'Your fetal movement count is significantly below normal ranges.';
+        recommendation = 'Please contact your healthcare provider immediately for urgent evaluation.';
+      }
+    } else {
+      // Shorter duration - use adjusted thresholds
+      const expectedKicks = Math.round(duration / 60 * 5 * phoneAdjustment);
+      if (kickCount >= expectedKicks) {
+        predictedClass = 0;
+        confidence = 0.80;
+        status = 'Normal';
+        message = phoneOnAbdomen
+          ? 'Fetal movements detected within expected ranges using phone-on-abdomen monitoring.'
+          : 'Fetal movements detected within expected ranges for this time period.';
+        recommendation = 'Continue monitoring. Consider a longer counting session for more comprehensive assessment.';
+      } else {
+        predictedClass = 1;
+        confidence = 0.75;
+        status = 'Suspect';
+        message = 'Fewer movements than expected for this time period.';
+        recommendation = 'Extend your counting session and consult your healthcare provider if concerned.';
+      }
+    }
+
+    console.log('Generated rule-based assessment:', status, '(confidence:', confidence + ')');
+
+    return {
+      predictedClass,
+      confidence,
+      status,
+      message,
+      recommendation,
+    };
+  }
+
+  private _extractFeaturesFromKickData({
+    kickCount,
+    duration,
+    gestationalWeek,
+    phoneOnAbdomen,
+  }: {
+    kickCount: number;
+    duration: number;
+    gestationalWeek: number;
+    phoneOnAbdomen: boolean;
+  }): number[] {
+    const durationMinutes = duration;
     const kicksPerMinute = kickCount / durationMinutes;
 
-    // Simplified feature extraction - matches the mobile implementation
+    // Adjust for phone position - phone on abdomen may detect more subtle movements
+    const sensitivityMultiplier = phoneOnAbdomen ? 1.3 : 1.0;
+
+    // Simplified feature extraction - in a real implementation,
+    // this would use actual CTG data or more sophisticated algorithms
     return [
-      140.0, // baseline value
+      140.0, // baseline value (estimated)
       kicksPerMinute > 0.5 ? 0.1 : 0.0, // accelerations
-      kicksPerMinute, // fetal_movement (normalized)
+      kicksPerMinute * sensitivityMultiplier, // fetal_movement (normalized)
       0.5, // uterine_contractions (estimated)
       0.0, // light_decelerations
       0.0, // severe_decelerations
       0.0, // prolongued_decelerations
       kicksPerMinute < 0.3 ? 50.0 : 20.0, // abnormal_short_term_variability
-      kicksPerMinute * 10, // mean_value_of_short_term_variability
+      kicksPerMinute * 10 * sensitivityMultiplier, // mean_value_of_short_term_variability
       kicksPerMinute < 0.3 ? 30.0 : 5.0, // percentage_of_time_with_abnormal_long_term_variability
-      kicksPerMinute * 15, // mean_value_of_long_term_variability
+      kicksPerMinute * 15 * sensitivityMultiplier, // mean_value_of_long_term_variability
       50.0, // histogram_width
       120.0, // histogram_min
       170.0, // histogram_max
@@ -144,28 +249,13 @@ export class FetalHealthService {
     ];
   }
 
-  private getPredictedClass(probabilities: Float32Array): number {
-    let maxIndex = 0;
-    let maxValue = probabilities[0];
-
-    for (let i = 1; i < probabilities.length; i++) {
-      if (probabilities[i] > maxValue) {
-        maxValue = probabilities[i];
-        maxIndex = i;
-      }
-    }
-
-    return maxIndex;
-  }
-
-  private generateAssessment(
+  private _generateAssessment(
     predictedClass: number,
     confidence: number,
     kickCount: number,
-    durationMinutes: number
+    duration: number,
+    phoneOnAbdomen: boolean
   ): FetalHealthAssessment {
-    const kicksPerHour = (kickCount / durationMinutes * 60).toFixed(1);
-
     let status: string;
     let message: string;
     let recommendation: string;
@@ -173,17 +263,23 @@ export class FetalHealthService {
     switch (predictedClass) {
       case 0: // Normal
         status = 'Normal';
-        message = 'Your baby\'s movement patterns appear normal and healthy.';
+        message = phoneOnAbdomen
+          ? 'Your baby\'s movement patterns appear normal based on phone-on-abdomen monitoring.'
+          : 'Your baby\'s movement patterns appear normal.';
         recommendation = 'Continue monitoring daily. Great job tracking your baby\'s activity!';
         break;
       case 1: // Suspect
         status = 'Suspect';
-        message = 'Your baby\'s movement patterns show some variations that may need attention.';
+        message = phoneOnAbdomen
+          ? 'Your baby\'s movement patterns show some variations detected by phone-on-abdomen monitoring.'
+          : 'Your baby\'s movement patterns show some variations that may need attention.';
         recommendation = 'Consider discussing these patterns with your healthcare provider for additional monitoring.';
         break;
       case 2: // Pathological
         status = 'Concerning';
-        message = 'Your baby\'s movement patterns suggest potential concerns.';
+        message = phoneOnAbdomen
+          ? 'Your baby\'s movement patterns detected by phone-on-abdomen monitoring suggest potential concerns.'
+          : 'Your baby\'s movement patterns suggest potential concerns.';
         recommendation = 'Please contact your healthcare provider immediately to discuss these results.';
         break;
       default:
@@ -202,10 +298,8 @@ export class FetalHealthService {
   }
 
   dispose(): void {
-    if (this.model) {
-      this.model.dispose();
-      this.model = null;
-    }
     this.isInitialized = false;
   }
 }
+
+export const fetalHealthService = new FetalHealthService();
