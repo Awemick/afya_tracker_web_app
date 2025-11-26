@@ -1,86 +1,163 @@
-// import { Paystack } from 'paystack-js';
 import { doc, setDoc, collection, query, where, getDocs, getDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 
-const PAYSTACK_PUBLIC_KEY = 'pk_test_9cb47519d44bdb60a211df4ae6a6e20282994433'; // Paystack test public key
+const PAYSTACK_SECRET_KEY = 'sk_test_5272a88368a3366346c09a66e192a57fffe7d3e3';
 
 export class PaystackService {
-  private paystack: any = null;
-
-  constructor() {
-    this.initializePaystack();
-  }
-
-  private async initializePaystack() {
-    try {
-      // const { default: paystack } = await import('paystack-js');
-      // this.paystack = paystack(PAYSTACK_PUBLIC_KEY);
-      console.log('Paystack initialization skipped');
-    } catch (error) {
-      console.error('Failed to initialize Paystack:', error);
-    }
-  }
-
   async initializeTransaction(config: {
     amount: number; // Amount in kobo
     email: string;
-    reference: string;
-    currency?: string;
+    planName: string;
     callback?: (response: any) => void;
     onClose?: () => void;
-  }) {
-    if (!this.paystack) {
-      throw new Error('Paystack not initialized');
+  }): Promise<string | null> {
+    try {
+      console.log('Initializing Paystack transaction...');
+      console.log('Email:', config.email, 'Amount:', config.amount, 'Plan:', config.planName);
+
+      const requestBody = JSON.stringify({
+        email: config.email,
+        amount: config.amount,
+        currency: 'KES',
+        callback_url: 'https://afya-tracker-25392.web.app/payment/callback',
+        metadata: {
+          plan_name: config.planName,
+          user_id: auth?.currentUser?.uid,
+        },
+      });
+
+      console.log('Request body:', requestBody);
+
+      const response = await fetch('https://api.paystack.co/transaction/initialize', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${PAYSTACK_SECRET_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: requestBody,
+      });
+
+      console.log('Response status:', response.status);
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Response data:', data);
+
+        if (data.status === true) {
+          const paymentUrl = data.data.authorization_url;
+          console.log('Payment URL:', paymentUrl);
+          return paymentUrl;
+        } else {
+          console.error('Paystack API returned status false:', data.message);
+          return null;
+        }
+      } else {
+        const errorText = await response.text();
+        console.error('HTTP error:', response.status, '-', errorText);
+        return null;
+      }
+    } catch (error) {
+      console.error('Paystack initialization error:', error);
+      return null;
     }
+  }
 
-    const handler = this.paystack.popup({
-      key: PAYSTACK_PUBLIC_KEY,
-      email: config.email,
-      amount: config.amount,
-      currency: config.currency || 'KES',
-      ref: config.reference,
-      callback: config.callback,
-      onClose: config.onClose,
+  async openPaymentWindow(paymentUrl: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      // Open payment URL in new window
+      const paymentWindow = window.open(
+        paymentUrl,
+        'paystack-payment',
+        'width=600,height=700,scrollbars=yes,resizable=yes'
+      );
+
+      if (!paymentWindow) {
+        console.error('Failed to open payment window - popup blocked?');
+        resolve(false);
+        return;
+      }
+
+      // Check if payment window is closed
+      const checkClosed = setInterval(() => {
+        if (paymentWindow.closed) {
+          clearInterval(checkClosed);
+          resolve(false); // User closed window without completing payment
+        }
+      }, 1000);
+
+      // Listen for messages from payment window (if implemented)
+      const messageHandler = (event: MessageEvent) => {
+        if (event.origin.includes('paystack.co') || event.origin.includes('afya-tracker-25392.web.app')) {
+          if (event.data === 'payment_success') {
+            clearInterval(checkClosed);
+            window.removeEventListener('message', messageHandler);
+            paymentWindow.close();
+            resolve(true);
+          }
+        }
+      };
+
+      window.addEventListener('message', messageHandler);
+
+      // Fallback: check URL changes (limited by CORS)
+      // This is a simplified approach - in production, you'd want a more robust solution
     });
+  }
 
-    return handler;
+  async storePaymentRecord(reference: string, amount: number, email: string, planName: string): Promise<void> {
+    try {
+      await setDoc(doc(db!, 'payments', reference), {
+        reference,
+        userId: auth?.currentUser?.uid,
+        email,
+        amount,
+        currency: 'KES',
+        planName,
+        status: 'completed',
+        timestamp: new Date(),
+      });
+
+      // Also create/update subscription
+      await setDoc(doc(collection(db!, 'subscriptions')), {
+        userId: auth?.currentUser?.uid,
+        planName,
+        amount,
+        currency: 'KES',
+        status: 'active',
+        createdAt: new Date(),
+        nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
+      });
+
+      console.log('Payment record and subscription stored successfully');
+    } catch (error) {
+      console.error('Error storing payment record:', error);
+      throw error;
+    }
   }
 
   async verifyPayment(reference: string): Promise<boolean> {
     try {
-      // In a real app, you'd call Paystack's verify endpoint from your backend
-      // For now, we'll simulate verification and store in Firestore
-      await setDoc(doc(db!, 'payments', reference), {
-        reference,
-        userId: auth!.currentUser?.uid,
-        status: 'verified',
-        timestamp: new Date(),
+      // Call Paystack's verify endpoint
+      const response = await fetch(`https://api.paystack.co/transaction/verify/${reference}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${PAYSTACK_SECRET_KEY}`,
+          'Content-Type': 'application/json',
+        },
       });
 
-      return true;
+      if (response.ok) {
+        const data = await response.json();
+        const status = data.data.status;
+        console.log('Payment verification result:', status);
+        return status === 'success';
+      }
+
+      return false;
     } catch (error) {
       console.error('Payment verification failed:', error);
       return false;
     }
-  }
-
-  async createSubscription(data: {
-    email: string;
-    amount: number; // Monthly amount in kobo
-    planName: string;
-  }) {
-    const subscriptionData = {
-      userId: auth!.currentUser?.uid,
-      email: data.email,
-      planName: data.planName,
-      amount: data.amount,
-      currency: 'KES',
-      status: 'active',
-      createdAt: new Date(),
-      nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
-    };
-
-    await setDoc(doc(collection(db!, 'subscriptions')), subscriptionData);
   }
 
   async processCommission(data: {
