@@ -302,4 +302,5 @@ class FetalHealthService {
   }
 }
 
+export { FetalHealthService };
 export const fetalHealthService = new FetalHealthService();
