@@ -199,7 +199,7 @@ const PatientHealthTimeline: React.FC<PatientHealthTimelineProps> = ({
       // Load progress notes
       try {
         const notesResponse = await progressNotesAPI.getPatientNotes(patientId);
-        const notes: ProgressNote[] = notesResponse.data;
+        const notes: ProgressNote[] = Array.isArray(notesResponse?.data) ? notesResponse.data : [];
 
         notes.forEach((note) => {
           timelineEvents.push({
@@ -268,7 +268,7 @@ const PatientHealthTimeline: React.FC<PatientHealthTimelineProps> = ({
       // Load patient links
       try {
         const linksResponse = await patientLinksAPI.getPatientLinks(patientId);
-        const links: any[] = linksResponse.data;
+        const links: any[] = Array.isArray(linksResponse?.data) ? linksResponse.data : [];
 
         links.forEach((link) => {
           timelineEvents.push({
@@ -290,7 +290,7 @@ const PatientHealthTimeline: React.FC<PatientHealthTimelineProps> = ({
       // Load medical records
       try {
         const recordsResponse = await medicalRecordsAPI.getPatientRecords(patientId);
-        const records: MedicalRecord[] = recordsResponse.data;
+        const records: MedicalRecord[] = Array.isArray(recordsResponse?.data) ? recordsResponse.data : [];
 
         records.forEach((record) => {
           timelineEvents.push({
@@ -312,7 +312,8 @@ const PatientHealthTimeline: React.FC<PatientHealthTimelineProps> = ({
       // Load completed tasks
       try {
         const tasksResponse = await tasksAPI.getTasks(patientId, 'patient');
-        const tasks: Task[] = tasksResponse.data.filter((task: Task) => task.status === 'completed');
+        const allTasks: Task[] = Array.isArray(tasksResponse?.data) ? tasksResponse.data : [];
+        const tasks: Task[] = allTasks.filter((task: Task) => task.status === 'completed');
 
         tasks.forEach((task) => {
           timelineEvents.push({

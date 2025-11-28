@@ -219,7 +219,7 @@ const TaskReminderSystem: React.FC<TaskReminderSystemProps> = ({
     });
   };
 
-  const filteredTasks = tasks.filter(task => {
+  const filteredTasks = (Array.isArray(tasks) ? tasks : []).filter(task => {
     if (filterStatus !== 'all' && task.status !== filterStatus) return false;
     if (filterPriority !== 'all' && task.priority !== filterPriority) return false;
     return true;
