@@ -7,7 +7,7 @@ const MobileAppPromotion: React.FC = () => {
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
 
   // Direct APK download URL from GitHub releases
-  const apkDownloadUrl = 'https://github.com/Awemick/afya_tracker_web_app/releases/download/vr.1.0/Afya.Tracker.apk';
+  const apkDownloadUrl = 'https://github.com/Awemick/afya_tracker_web_app/releases/download/vr.1.0/Afya.Tracker.1.0.apk';
 
   useEffect(() => {
     // Generate QR code for APK download
