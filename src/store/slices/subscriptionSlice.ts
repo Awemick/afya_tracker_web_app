@@ -64,20 +64,6 @@ export const createSubscription = createAsyncThunk(
   }
 );
 
-export const initializePaystackTransaction = createAsyncThunk(
-  'subscription/initializePaystackTransaction',
-  async (config: {
-    amount: number;
-    email: string;
-    reference: string;
-    currency?: string;
-    callback?: (response: any) => void;
-    onClose?: () => void;
-  }) => {
-    const handler = await paystackService.initializeTransaction(config);
-    return handler;
-  }
-);
 
 export const verifyPayment = createAsyncThunk(
   'subscription/verifyPayment',
