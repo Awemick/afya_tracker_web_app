@@ -188,6 +188,31 @@ export class PaystackService {
     return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   }
 
+  async createSubscription(data: {
+    email: string;
+    planName: string;
+    amount: number;
+  }): Promise<void> {
+    try {
+      // Create subscription record in Firestore
+      await setDoc(doc(collection(db!, 'subscriptions')), {
+        userId: auth?.currentUser?.uid,
+        planName: data.planName,
+        amount: data.amount,
+        currency: 'KES',
+        email: data.email,
+        status: 'active',
+        createdAt: new Date(),
+        nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
+      });
+
+      console.log('Subscription created successfully');
+    } catch (error) {
+      console.error('Error creating subscription:', error);
+      throw error;
+    }
+  }
+
   async getUserSubscription(): Promise<any | null> {
     if (!auth!.currentUser) return null;
 
