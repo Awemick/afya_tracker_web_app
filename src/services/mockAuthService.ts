@@ -8,30 +8,8 @@ export interface AuthUser extends User {
   pregnancyWeek?: number;
 }
 
-// Mock user database
-const mockUsers: AuthUser[] = [
-  {
-    id: '1',
-    name: 'Dr. Wanjiku',
-    email: 'doctor@afya.com',
-    role: 'provider',
-  },
-  {
-    id: '2',
-    name: 'Mary Wanjiku',
-    email: 'patient@afya.com',
-    role: 'patient',
-    phone: '+254712345678',
-    dueDate: '2025-06-15',
-    pregnancyWeek: 20,
-  },
-  {
-    id: '3',
-    name: 'Super Admin',
-    email: 'admin@afya.com',
-    role: 'admin',
-  },
-];
+// Mock user database - Empty in production, only for development testing
+const mockUsers: AuthUser[] = [];
 
 let currentUser: AuthUser | null = null;
 const authListeners: ((user: AuthUser | null) => void)[] = [];
@@ -48,11 +26,8 @@ export const loginWithEmailAndPassword = async (
     throw new Error('User not found');
   }
 
-  // Simple password check (in real app, this would be hashed)
-  if (password !== 'password' && password !== 'admin123') {
-    throw new Error('Invalid password');
-  }
-
+  // In production, this would validate against Firebase Auth
+  // For mock service, any password is accepted for existing users
   currentUser = user;
   authListeners.forEach(listener => listener(user));
 
