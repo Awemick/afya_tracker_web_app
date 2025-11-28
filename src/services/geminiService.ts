@@ -16,7 +16,13 @@ export class GeminiService {
 
   private initializeModel() {
     try {
-      const genAI = new GoogleGenerativeAI('AIzaSyAI2N4Cgs5scnpsNnMVyZVLlB9tLIaGYhg');
+      const apiKey = process.env.REACT_APP_GEMINI_API_KEY;
+
+      if (!apiKey || apiKey === 'YOUR_GEMINI_API_KEY_HERE') {
+        throw new Error('Gemini API key not configured. Please set REACT_APP_GEMINI_API_KEY in your .env file.');
+      }
+
+      const genAI = new GoogleGenerativeAI(apiKey);
       this.model = genAI.getGenerativeModel({
         model: 'gemini-2.0-flash-lite',
       });

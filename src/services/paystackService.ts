@@ -1,7 +1,7 @@
 import { doc, setDoc, collection, query, where, getDocs, getDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 
-const PAYSTACK_SECRET_KEY = 'sk_test_5272a88368a3366346c09a66e192a57fffe7d3e3';
+const PAYSTACK_SECRET_KEY = process.env.REACT_APP_PAYSTACK_SECRET_KEY;
 
 export class PaystackService {
   async initializeTransaction(config: {

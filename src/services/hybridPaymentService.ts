@@ -8,14 +8,14 @@ export enum PaymentMethod {
   MPESA = 'mpesa'
 }
 
-const PAYSTACK_PUBLIC_KEY = 'pk_test_9cb47519d44bdb60a211df4ae6a6e20282994433';
-const PAYSTACK_SECRET_KEY = 'sk_test_5272a88368a3366346c09a66e192a57fffe7d3e3';
+const PAYSTACK_PUBLIC_KEY = process.env.REACT_APP_PAYSTACK_PUBLIC_KEY;
+const PAYSTACK_SECRET_KEY = process.env.REACT_APP_PAYSTACK_SECRET_KEY;
 
 // M-Pesa Daraja credentials
-const MPESA_CONSUMER_KEY = '4UaiFjkfX9DUBEHhrPsyCwTKGSFZr3kbVBgdRjX1RmfqWhJc';
-const MPESA_CONSUMER_SECRET = 'E0AQJetp39ljsr9znvU9i1PpvuTJ9GJerjmw5zDv5VRau7Bk8P5iwKnmuM6LU9wD';
-const MPESA_SHORT_CODE = 'your_mpesa_shortcode'; // Replace with your actual shortcode
-const MPESA_PASS_KEY = 'your_mpesa_passkey'; // Replace with your actual passkey
+const MPESA_CONSUMER_KEY = process.env.REACT_APP_MPESA_CONSUMER_KEY;
+const MPESA_CONSUMER_SECRET = process.env.REACT_APP_MPESA_CONSUMER_SECRET;
+const MPESA_SHORT_CODE = process.env.REACT_APP_MPESA_SHORT_CODE;
+const MPESA_PASS_KEY = process.env.REACT_APP_MPESA_PASS_KEY;
 
 export class HybridPaymentService {
   private paystack: any = null;
